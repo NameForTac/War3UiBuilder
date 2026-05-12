@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QTreeWidget>
 #include <QList>
+#include <QLineEdit>
 
 struct UiElementData;
 
@@ -33,6 +34,7 @@ private slots:
     void onItemDoubleClicked(QTreeWidgetItem *item, int column);
     void onCustomContextMenu(const QPoint &pos);
     void processPendingDrop();
+    void onSearchChanged(const QString &text);
 
 private:
     QTreeWidgetItem *findItemByName(const QString &name) const;
@@ -46,6 +48,7 @@ private:
     bool m_checkPending = false;
     QMap<QString, QString> m_lastTreeState;
     QTreeWidget *m_tree;
+    QLineEdit *m_searchEdit;
 };
 
 #endif // TREEPANEL_H

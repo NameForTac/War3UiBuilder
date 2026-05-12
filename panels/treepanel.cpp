@@ -7,6 +7,7 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QTimer>
+#include <QTreeWidgetItemIterator>
 
 static constexpr int COL_NAME    = 0;
 static constexpr int COL_VISIBLE = 1;
@@ -18,6 +19,11 @@ TreePanel::TreePanel(QWidget *parent)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+
+    m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setPlaceholderText(tr("Search elements..."));
+    m_searchEdit->setClearButtonEnabled(true);
+    layout->addWidget(m_searchEdit);
 
     m_tree = new QTreeWidget(this);
     m_tree->setColumnCount(COL_COUNT);
@@ -35,6 +41,7 @@ TreePanel::TreePanel(QWidget *parent)
 
     layout->addWidget(m_tree);
 
+    connect(m_searchEdit, &QLineEdit::textChanged, this, &TreePanel::onSearchChanged);
     connect(m_tree, &QTreeWidget::itemClicked, this, &TreePanel::onItemClicked);
     connect(m_tree, &QTreeWidget::itemDoubleClicked, this, &TreePanel::onItemDoubleClicked);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &TreePanel::onCustomContextMenu);
@@ -233,4 +240,35 @@ QTreeWidgetItem *TreePanel::findItemByName(const QString &name) const
 {
     QList<QTreeWidgetItem *> items = m_tree->findItems(name, Qt::MatchExactly | Qt::MatchRecursive, COL_NAME);
     return items.isEmpty() ? nullptr : items.first();
+}
+
+void TreePanel::onSearchChanged(const QString &text)
+{
+    if (text.isEmpty()) {
+        // Show all items
+        QTreeWidgetItemIterator it(m_tree);
+        while (*it) {
+            (*it)->setHidden(false);
+            ++it;
+        }
+        m_tree->expandAll();
+        return;
+    }
+
+    QTreeWidgetItemIterator it(m_tree);
+    while (*it) {
+        QString name = (*it)->data(COL_NAME, Qt::UserRole).toString();
+        bool match = name.contains(text, Qt::CaseInsensitive);
+        (*it)->setHidden(!match);
+        if (match) {
+            // Ensure all ancestors are visible
+            QTreeWidgetItem *parent = (*it)->parent();
+            while (parent) {
+                parent->setHidden(false);
+                parent->setExpanded(true);
+                parent = parent->parent();
+            }
+        }
+        ++it;
+    }
 }

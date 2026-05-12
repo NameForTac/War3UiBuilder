@@ -66,20 +66,6 @@ QString IniGenerator::propertyLine(const QString &prefix, const QString &key, co
     return QString("%1%2 = %3\n").arg(prefix, key, value);
 }
 
-double IniGenerator::toWar3X(double px, double parentPx)
-{
-    return (px - parentPx) / 1920.0 * 0.8;
-}
-
-double IniGenerator::toWar3Y(double py, double parentPy)
-{
-    // War3 uses bottom-left origin; convert from top-left
-    double wy = (1080.0 - py) / 1080.0 * 0.6;
-    if (parentPy != 0.0)
-        wy -= (1080.0 - parentPy) / 1080.0 * 0.6;
-    return wy;
-}
-
 QString IniGenerator::makeTextureRef(const QString &texture)
 {
     QString ref = texture;
@@ -105,21 +91,21 @@ void IniGenerator::writeElement(QString &output, const UiElementData &element,
 
     output += propertyLine(prefix, "Type", element.type);
 
-    // Calculate parent-relative coordinates
+    // Calculate parent-relative coordinates in pixel space
     double relX = element.x;
     double relY = element.y;
-    double parentX = 0.0, parentY = 0.0;
     if (!element.parent.isEmpty() && dataMap.contains(element.parent)) {
         const auto &parent = dataMap[element.parent];
         relX -= parent.x;
         relY -= parent.y;
-        parentX = parent.x;
-        parentY = parent.y;
     }
 
     if (war3Mode) {
-        output += propertyLine(prefix, "X", QString::number(toWar3X(relX), 'f', 4));
-        output += propertyLine(prefix, "Y", QString::number(toWar3Y(element.y, parentY), 'f', 4));
+        output += propertyLine(prefix, "X",
+            QString::number(relX / 1920.0 * 0.8, 'f', 4));
+        // War3 Y uses bottom-left origin; convert from top-left relative offset
+        output += propertyLine(prefix, "Y",
+            QString::number(-relY / 1080.0 * 0.6, 'f', 4));
         output += propertyLine(prefix, "Width", QString::number(element.width / 1920.0 * 0.8, 'f', 4));
         output += propertyLine(prefix, "Height", QString::number(element.height / 1080.0 * 0.6, 'f', 4));
     } else {
@@ -162,10 +148,10 @@ void IniGenerator::writeElement(QString &output, const UiElementData &element,
 
     output += "\n";
 
-    // Write children recursively
-    for (const auto &childName : element.children) {
-        if (dataMap.contains(childName)) {
-            writeElement(output, dataMap[childName], dataMap, written, war3Mode);
+    // Write children — lookup by parent field at runtime
+    for (auto it = dataMap.constBegin(); it != dataMap.constEnd(); ++it) {
+        if (!written.contains(it.key()) && it.value().parent == element.name) {
+            writeElement(output, it.value(), dataMap, written, war3Mode);
         }
     }
 }

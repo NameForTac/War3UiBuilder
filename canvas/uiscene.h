@@ -42,6 +42,16 @@ public:
     void bringToFront(const QString &name);
     void sendToBack(const QString &name);
 
+    // Alignment operations (operate on selected items)
+    void alignLeft();
+    void alignRight();
+    void alignTop();
+    void alignBottom();
+    void alignCenterH();
+    void alignCenterV();
+    void distributeH();
+    void distributeV();
+
 signals:
     void contextActionTriggered();
     void elementSelected(const QString &name);
@@ -61,6 +71,7 @@ protected:
 
 private:
     UiElement *uiElementFromItem(QGraphicsItem *item) const;
+    QList<UiElement *> selectedUiElements() const;
     UiElement *findByName(const QString &name) const;
     void moveDescendants(const QString &parentName, double dx, double dy);
     void onSelectionChanged();

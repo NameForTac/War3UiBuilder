@@ -23,6 +23,10 @@ protected:
     void drawBackground(QPainter *painter, const QRectF &rect) override;
 
 private:
+signals:
+    void zoomChanged(double factor);
+
+private:
     double m_zoomFactor = 1.0;
     static constexpr double MIN_ZOOM = 0.1;
     static constexpr double MAX_ZOOM = 10.0;

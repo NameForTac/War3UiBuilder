@@ -22,7 +22,6 @@ struct UiElementData
     bool locked = false;
 
     QString parent;
-    QStringList children;
 
     // Type-specific properties
     QString normalTexture;      // BUTTON: normal state texture

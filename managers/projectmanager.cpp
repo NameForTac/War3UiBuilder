@@ -48,12 +48,6 @@ bool ProjectManager::saveProject(const QString &path)
         obj["fontSize"] = el.fontSize;
         obj["textColor"] = el.textColor;
 
-        QJsonArray children;
-        for (const auto &child : el.children) {
-            children.append(child);
-        }
-        obj["children"] = children;
-
         QJsonObject props;
         for (auto it = el.properties.begin(); it != el.properties.end(); ++it) {
             props[it.key()] = it.value();
@@ -121,11 +115,6 @@ bool ProjectManager::loadProject(const QString &path)
         el.textContent = obj["textContent"].toString();
         el.fontSize = obj["fontSize"].toDouble(14.0);
         el.textColor = obj["textColor"].toString("#FFFFFF");
-
-        QJsonArray children = obj["children"].toArray();
-        for (const auto &child : children) {
-            el.children.append(child.toString());
-        }
 
         QJsonObject props = obj["properties"].toObject();
         for (auto it = props.begin(); it != props.end(); ++it) {

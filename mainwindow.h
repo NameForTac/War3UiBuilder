@@ -3,6 +3,8 @@
 
 #include <QMainWindow>
 #include <QList>
+#include <QLabel>
+#include <QMenu>
 
 #include "elements/uielementdata.h"
 
@@ -36,6 +38,16 @@ private slots:
     void onRedo();
     void onAbout();
 
+    // Alignment
+    void onAlignLeft();
+    void onAlignRight();
+    void onAlignTop();
+    void onAlignBottom();
+    void onAlignCenterH();
+    void onAlignCenterV();
+    void onDistributeH();
+    void onDistributeV();
+
 private:
     void setupMenuBar();
     void setupToolBar();
@@ -53,8 +65,19 @@ private:
     UndoManager *m_undoManager;
     QString m_selectedElementName;
     QList<UiElementData> m_clipboard;
+    QLabel *m_zoomLabel;
 
     void pushUndoState();
+
+    // Recent files
+    void updateRecentFilesMenu();
+    void openRecentFile();
+    QStringList recentFiles() const;
+    void addRecentFile(const QString &path);
+
+    QMenu *m_recentMenu;
+    QStringList m_recentFiles;
+    static constexpr int MAX_RECENT_FILES = 9;
 };
 
 #endif // MAINWINDOW_H

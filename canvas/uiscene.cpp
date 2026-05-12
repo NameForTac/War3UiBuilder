@@ -357,6 +357,142 @@ void UiScene::sendToBack(const QString &name)
     emit elementDataChanged();
 }
 
+QList<UiElement *> UiScene::selectedUiElements() const
+{
+    QList<UiElement *> result;
+    for (auto *item : selectedItems()) {
+        auto *el = uiElementFromItem(item);
+        if (el) result.append(el);
+    }
+    return result;
+}
+
+void UiScene::alignLeft()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 2) return;
+    double ref = sel.first()->elementData().x;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.x = ref;
+        el->updateData(d);
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::alignRight()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 2) return;
+    double ref = sel.first()->elementData().x + sel.first()->elementData().width;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.x = ref - d.width;
+        el->updateData(d);
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::alignTop()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 2) return;
+    double ref = sel.first()->elementData().y;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.y = ref;
+        el->updateData(d);
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::alignBottom()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 2) return;
+    double ref = sel.first()->elementData().y + sel.first()->elementData().height;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.y = ref - d.height;
+        el->updateData(d);
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::alignCenterH()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 2) return;
+    double ref = sel.first()->elementData().x + sel.first()->elementData().width / 2.0;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.x = ref - d.width / 2.0;
+        el->updateData(d);
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::alignCenterV()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 2) return;
+    double ref = sel.first()->elementData().y + sel.first()->elementData().height / 2.0;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.y = ref - d.height / 2.0;
+        el->updateData(d);
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::distributeH()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 3) return;
+    std::sort(sel.begin(), sel.end(), [](UiElement *a, UiElement *b) {
+        return a->elementData().x < b->elementData().x;
+    });
+    double first = sel.first()->elementData().x;
+    double last = sel.last()->elementData().x + sel.last()->elementData().width;
+    double totalWidth = last - first;
+    double usedWidth = 0;
+    for (auto *el : sel)
+        usedWidth += el->elementData().width;
+    double gap = (totalWidth - usedWidth) / (sel.size() - 1);
+    double pos = first;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.x = pos;
+        el->updateData(d);
+        pos += d.width + gap;
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::distributeV()
+{
+    auto sel = selectedUiElements();
+    if (sel.size() < 3) return;
+    std::sort(sel.begin(), sel.end(), [](UiElement *a, UiElement *b) {
+        return a->elementData().y < b->elementData().y;
+    });
+    double first = sel.first()->elementData().y;
+    double last = sel.last()->elementData().y + sel.last()->elementData().height;
+    double totalHeight = last - first;
+    double usedHeight = 0;
+    for (auto *el : sel)
+        usedHeight += el->elementData().height;
+    double gap = (totalHeight - usedHeight) / (sel.size() - 1);
+    double pos = first;
+    for (auto *el : sel) {
+        auto d = el->elementData();
+        d.y = pos;
+        el->updateData(d);
+        pos += d.height + gap;
+    }
+    emit elementDataChanged();
+}
+
 void UiScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
     QGraphicsScene::mousePressEvent(event);

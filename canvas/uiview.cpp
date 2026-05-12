@@ -24,6 +24,7 @@ void UiView::zoomIn()
     if (m_zoomFactor * factor <= MAX_ZOOM) {
         scale(factor, factor);
         m_zoomFactor *= factor;
+        emit zoomChanged(m_zoomFactor);
     }
 }
 
@@ -33,6 +34,7 @@ void UiView::zoomOut()
     if (m_zoomFactor * factor >= MIN_ZOOM) {
         scale(factor, factor);
         m_zoomFactor *= factor;
+        emit zoomChanged(m_zoomFactor);
     }
 }
 
@@ -46,6 +48,7 @@ void UiView::fitAll()
         resetTransform();
         m_zoomFactor = 1.0;
     }
+    emit zoomChanged(m_zoomFactor);
 }
 
 void UiView::wheelEvent(QWheelEvent *event)
@@ -56,6 +59,7 @@ void UiView::wheelEvent(QWheelEvent *event)
         if (newZoom >= MIN_ZOOM && newZoom <= MAX_ZOOM) {
             scale(factor, factor);
             m_zoomFactor = newZoom;
+            emit zoomChanged(m_zoomFactor);
         }
         event->accept();
     } else {

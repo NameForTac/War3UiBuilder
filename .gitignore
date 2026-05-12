@@ -19,6 +19,10 @@ object_script.*
 # IDE
 .vs/
 .vscode/
+
+# Claude
+.claude/
+.vscode/
 *.sln
 *.vcxproj*
 *.user
@@ -27,6 +31,12 @@ object_script.*
 # OS
 Thumbs.db
 .DS_Store
+
+# Test artifacts
+tests/*.exe
+tests/*.moc
+tests/*.o
+test_output.txt
 
 # Qt Creator
 *.autosave

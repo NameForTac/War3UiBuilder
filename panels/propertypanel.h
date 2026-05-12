@@ -21,12 +21,14 @@ public:
     ~PropertyPanel() = default;
 
     void showElement(const QString &name, const UiElementData &data);
+    void showBatch(const QStringList &names, const QList<UiElementData> &elements);
     void setReferenceOffset(double ox, double oy);
     void updateParentList(const QStringList &parentNames);
     void clearPanel();
 
 signals:
     void propertyChanged(const QString &name, const UiElementData &data);
+    void batchPropertyChanged(const QStringList &names, const UiElementData &data);
 
 private slots:
     void onNameChanged();
@@ -40,6 +42,8 @@ private:
     UiElementData m_currentData;     // working copy of element data
     double m_offsetX = 0.0;
     double m_offsetY = 0.0;
+    bool m_batchActive = false;
+    QStringList m_batchNames;
 
     void updateWar3Coords();
     bool isWar3Mode() const;
@@ -52,6 +56,9 @@ private:
     double fromDisplayW(double v) const;
     double fromDisplayH(double v) const;
     void refreshSpinRanges();
+
+    // Batch mode indicator
+    QLabel *m_batchLabel;
 
     // Basic properties
     QLineEdit *m_nameEdit;

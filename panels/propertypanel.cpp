@@ -18,6 +18,15 @@ void PropertyPanel::setupUi()
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(4, 4, 4, 4);
 
+    // Batch mode indicator (hidden by default)
+    m_batchLabel = new QLabel(this);
+    m_batchLabel->setStyleSheet(
+        "QLabel { background-color: #3b3d5c; color: #7aa2f7; "
+        "padding: 6px 8px; border-radius: 4px; font-weight: 600; "
+        "font-size: 12px; }");
+    m_batchLabel->setVisible(false);
+    mainLayout->addWidget(m_batchLabel);
+
     // Basic properties group
     auto *basicGroup = new QGroupBox(tr("Basic Properties"), this);
     auto *formLayout = new QFormLayout(basicGroup);
@@ -232,9 +241,17 @@ void PropertyPanel::showElement(const QString &name, const UiElementData &data)
 {
     m_currentElementName = name;
     m_currentData = data;   // take a copy
+    m_batchActive = false;
+    m_batchNames.clear();
 
     blockAllSignals(true);
+    m_batchLabel->setVisible(false);
     refreshSpinRanges();
+
+    // Re-enable fields that may have been disabled in batch mode
+    m_nameEdit->setEnabled(true);
+    m_typeCombo->setEnabled(true);
+    m_parentCombo->setEnabled(true);
 
     m_nameEdit->setText(m_currentData.name);
     m_typeCombo->setCurrentText(m_currentData.type);
@@ -268,6 +285,53 @@ void PropertyPanel::showElement(const QString &name, const UiElementData &data)
     setEnabled(true);
 }
 
+void PropertyPanel::showBatch(const QStringList &names, const QList<UiElementData> &elements)
+{
+    if (elements.isEmpty()) return;
+
+    m_batchActive = true;
+    m_batchNames = names;
+    m_currentElementName = names.first();
+    m_currentData = elements.first();
+
+    m_batchLabel->setText(tr("Batch: %1 elements selected").arg(names.size()));
+    m_batchLabel->setVisible(true);
+
+    blockAllSignals(true);
+    refreshSpinRanges();
+
+    // Show the first element's data as the template
+    m_nameEdit->setText(tr("(multiple)"));
+    m_typeCombo->setCurrentText(m_currentData.type);
+    m_xSpin->setValue(toDisplayX(m_currentData.x));
+    m_ySpin->setValue(toDisplayY(m_currentData.y));
+    m_widthSpin->setValue(toDisplayW(m_currentData.width));
+    m_heightSpin->setValue(toDisplayH(m_currentData.height));
+    m_textureEdit->setText(m_currentData.texture);
+    m_parentCombo->setCurrentText(QString());
+
+    // Type-specific fields
+    m_normalTextureEdit->setText(m_currentData.normalTexture);
+    m_highlightTextureEdit->setText(m_currentData.highlightTexture);
+    m_modelPathEdit->setText(m_currentData.modelPath);
+    m_textContentEdit->setText(m_currentData.textContent);
+    m_fontSizeSpin->setValue(m_currentData.fontSize);
+    m_textColorEdit->setText(m_currentData.textColor);
+    updateTypeSpecificVisibility(m_currentData.type);
+
+    m_extraTable->setRowCount(0);
+
+    // Disable fields that don't make sense for batch edit
+    m_nameEdit->setEnabled(false);
+    m_typeCombo->setEnabled(false);
+    m_parentCombo->setEnabled(false);
+
+    updateWar3Coords();
+
+    blockAllSignals(false);
+    setEnabled(true);
+}
+
 void PropertyPanel::updateParentList(const QStringList &parentNames)
 {
     QString currentParent = m_parentCombo->currentText();
@@ -284,8 +348,11 @@ void PropertyPanel::clearPanel()
     m_currentData = UiElementData();
     m_offsetX = 0.0;
     m_offsetY = 0.0;
+    m_batchActive = false;
+    m_batchNames.clear();
 
     blockAllSignals(true);
+    m_batchLabel->setVisible(false);
     m_coordMode->setCurrentIndex(0);
     refreshSpinRanges();
     m_typeCombo->setCurrentIndex(0);
@@ -469,7 +536,11 @@ void PropertyPanel::updateTypeSpecificVisibility(const QString &type)
 
 void PropertyPanel::emitPropertyChanged()
 {
-    emit propertyChanged(m_currentElementName, m_currentData);
+    if (m_batchActive) {
+        emit batchPropertyChanged(m_batchNames, m_currentData);
+    } else {
+        emit propertyChanged(m_currentElementName, m_currentData);
+    }
 }
 
 void PropertyPanel::blockAllSignals(bool block)

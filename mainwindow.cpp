@@ -17,6 +17,9 @@
 #include <QAction>
 #include <QApplication>
 #include <QLabel>
+#include <QStyle>
+#include <QSettings>
+#include <QFileInfo>
 
 // ── Dark theme stylesheet ──
 static const char *DARK_STYLESHEET = R"(
@@ -294,6 +297,15 @@ MainWindow::MainWindow(QWidget *parent)
     connectSignals();
 
     statusBar()->showMessage(tr("Ready"));
+
+    // Zoom indicator in status bar
+    m_zoomLabel = new QLabel(tr("100%"), this);
+    m_zoomLabel->setMinimumWidth(60);
+    m_zoomLabel->setAlignment(Qt::AlignCenter);
+    statusBar()->addPermanentWidget(m_zoomLabel);
+    connect(m_view, &UiView::zoomChanged, this, [this](double factor) {
+        m_zoomLabel->setText(QString("%1%").arg(qRound(factor * 100.0)));
+    });
 }
 
 MainWindow::~MainWindow() = default;
@@ -320,6 +332,12 @@ void MainWindow::setupMenuBar()
     QAction *exitAct = fileMenu->addAction(tr("E&xit"), this, &QWidget::close);
     exitAct->setShortcut(QKeySequence::Quit);
 
+    // Recent files
+    fileMenu->addSeparator();
+    m_recentMenu = fileMenu->addMenu(tr("Recent Files"));
+    m_recentFiles = recentFiles();
+    updateRecentFilesMenu();
+
     // Edit menu
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
 
@@ -328,6 +346,11 @@ void MainWindow::setupMenuBar()
 
     QAction *redoAct = editMenu->addAction(tr("&Redo"), this, &MainWindow::onRedo);
     redoAct->setShortcut(QKeySequence("Ctrl+Shift+Z"));
+    // Additional redo shortcut
+    QAction *redoAlt = new QAction(tr("&Redo"), this);
+    redoAlt->setShortcut(QKeySequence("Ctrl+Y"));
+    connect(redoAlt, &QAction::triggered, this, &MainWindow::onRedo);
+    addAction(redoAlt);
 
     editMenu->addSeparator();
 
@@ -344,6 +367,18 @@ void MainWindow::setupMenuBar()
 
     QAction *deleteAct = editMenu->addAction(tr("&Delete Selected"), this, &MainWindow::onDeleteSelected);
     deleteAct->setShortcut(QKeySequence::Delete);
+
+    editMenu->addSeparator();
+    QMenu *alignMenu = editMenu->addMenu(tr("&Align"));
+    alignMenu->addAction(tr("Left"), QKeySequence("Ctrl+Shift+L"), this, &MainWindow::onAlignLeft);
+    alignMenu->addAction(tr("Right"), QKeySequence("Ctrl+Shift+R"), this, &MainWindow::onAlignRight);
+    alignMenu->addAction(tr("Top"), QKeySequence("Ctrl+Shift+T"), this, &MainWindow::onAlignTop);
+    alignMenu->addAction(tr("Bottom"), QKeySequence("Ctrl+Shift+B"), this, &MainWindow::onAlignBottom);
+    alignMenu->addAction(tr("Center H"), QKeySequence("Ctrl+Shift+H"), this, &MainWindow::onAlignCenterH);
+    alignMenu->addAction(tr("Center V"), QKeySequence("Ctrl+Shift+V"), this, &MainWindow::onAlignCenterV);
+    alignMenu->addSeparator();
+    alignMenu->addAction(tr("Distribute H"), QKeySequence("Ctrl+Shift+1"), this, &MainWindow::onDistributeH);
+    alignMenu->addAction(tr("Distribute V"), QKeySequence("Ctrl+Shift+2"), this, &MainWindow::onDistributeV);
 
     // View menu
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
@@ -362,15 +397,41 @@ void MainWindow::setupToolBar()
 {
     QToolBar *toolbar = addToolBar(tr("Main"));
     toolbar->setIconSize(QSize(24, 24));
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
 
-    toolbar->addAction(tr("New"), this, &MainWindow::onNewProject);
-    toolbar->addAction(tr("Open"), this, &MainWindow::onOpenProject);
-    toolbar->addAction(tr("Save"), this, &MainWindow::onSaveProject);
+    auto *newAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_FileIcon),
+        tr("New"), this, &MainWindow::onNewProject);
+    newAct->setToolTip(tr("New Project (Ctrl+N)"));
+
+    auto *openAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_DialogOpenButton),
+        tr("Open"), this, &MainWindow::onOpenProject);
+    openAct->setToolTip(tr("Open Project (Ctrl+O)"));
+
+    auto *saveAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_DialogSaveButton),
+        tr("Save"), this, &MainWindow::onSaveProject);
+    saveAct->setToolTip(tr("Save Project (Ctrl+S)"));
+
     toolbar->addSeparator();
-    toolbar->addAction(tr("Import"), this, &MainWindow::onImportImage);
-    toolbar->addAction(tr("Export INI"), this, &MainWindow::onExportIni);
+
+    auto *importAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_FileDialogNewFolder),
+        tr("Import"), this, &MainWindow::onImportImage);
+    importAct->setToolTip(tr("Import images as UI elements"));
+
+    auto *exportAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_DialogSaveButton),
+        tr("Export INI"), this, &MainWindow::onExportIni);
+    exportAct->setToolTip(tr("Export to Warcraft III INI format (Ctrl+E)"));
+
     toolbar->addSeparator();
-    toolbar->addAction(tr("Delete"), this, &MainWindow::onDeleteSelected);
+
+    auto *delAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_TrashIcon),
+        tr("Delete"), this, &MainWindow::onDeleteSelected);
+    delAct->setToolTip(tr("Delete selected element (Delete)"));
 }
 
 void MainWindow::setupCentralWidget()
@@ -406,7 +467,16 @@ void MainWindow::connectSignals()
     connect(m_scene, &UiScene::elementSelected, this, [this](const QString &name) {
         m_selectedElementName = name;
         m_treePanel->selectElement(name);
-        refreshPropertyPanel(name);
+        // Check for multi-selection -> batch editing mode
+        auto selected = m_scene->selectedElementData();
+        if (selected.size() > 1) {
+            QStringList names;
+            for (const auto &d : selected)
+                names.append(d.name);
+            m_propertyPanel->showBatch(names, selected);
+        } else {
+            refreshPropertyPanel(name);
+        }
     });
     connect(m_scene, &UiScene::elementDeselected, this, [this]() {
         m_selectedElementName.clear();
@@ -491,6 +561,16 @@ void MainWindow::connectSignals()
         }
         m_treePanel->refreshTree(m_scene->allElementData());
     });
+
+    // Batch property changes -> update all selected elements
+    connect(m_propertyPanel, &PropertyPanel::batchPropertyChanged, this,
+            [this](const QStringList &names, const UiElementData &data) {
+        pushUndoState();
+        for (const QString &name : names) {
+            m_scene->updateElementProperty(name, data);
+        }
+        m_treePanel->refreshTree(m_scene->allElementData());
+    });
 }
 
 void MainWindow::onNewProject()
@@ -513,6 +593,7 @@ void MainWindow::onOpenProject()
         m_scene->loadFromData(m_projectManager->elements());
         m_treePanel->rebuildTree(m_projectManager->elements());
         statusBar()->showMessage(tr("Project loaded: ") + path);
+        addRecentFile(path);
     } else {
         QMessageBox::warning(this, tr("Error"), tr("Failed to load project."));
     }
@@ -527,6 +608,7 @@ void MainWindow::onSaveProject()
     m_projectManager->setElements(m_scene->allElementData());
     if (m_projectManager->saveProject(path)) {
         statusBar()->showMessage(tr("Project saved: ") + path);
+        addRecentFile(path);
     } else {
         QMessageBox::warning(this, tr("Error"), tr("Failed to save project."));
     }
@@ -647,6 +729,70 @@ void MainWindow::pushUndoState()
     m_undoManager->pushState(m_scene->allElementData());
 }
 
+QStringList MainWindow::recentFiles() const
+{
+    QSettings settings;
+    return settings.value("recentFiles").toStringList();
+}
+
+void MainWindow::addRecentFile(const QString &path)
+{
+    QStringList files = recentFiles();
+    files.removeAll(path);
+    files.prepend(path);
+    while (files.size() > MAX_RECENT_FILES)
+        files.removeLast();
+    QSettings settings;
+    settings.setValue("recentFiles", files);
+    m_recentFiles = files;
+    updateRecentFilesMenu();
+}
+
+void MainWindow::updateRecentFilesMenu()
+{
+    m_recentMenu->clear();
+    if (m_recentFiles.isEmpty()) {
+        m_recentMenu->addAction(tr("(No recent files)"))->setEnabled(false);
+        return;
+    }
+    for (int i = 0; i < m_recentFiles.size(); ++i) {
+        QString label = QString("&%1 %2").arg(i + 1).arg(m_recentFiles[i]);
+        auto *act = m_recentMenu->addAction(label);
+        act->setData(m_recentFiles[i]);
+        connect(act, &QAction::triggered, this, &MainWindow::openRecentFile);
+    }
+    m_recentMenu->addSeparator();
+    auto *clearAct = m_recentMenu->addAction(tr("Clear Recent Files"));
+    connect(clearAct, &QAction::triggered, this, [this]() {
+        QSettings settings;
+        settings.remove("recentFiles");
+        m_recentFiles.clear();
+        updateRecentFilesMenu();
+    });
+}
+
+void MainWindow::openRecentFile()
+{
+    auto *act = qobject_cast<QAction *>(sender());
+    if (!act) return;
+    QString path = act->data().toString();
+    if (QFileInfo::exists(path)) {
+        if (m_projectManager->loadProject(path)) {
+            m_scene->loadFromData(m_projectManager->elements());
+            m_treePanel->rebuildTree(m_projectManager->elements());
+            statusBar()->showMessage(tr("Project loaded: ") + path);
+            addRecentFile(path);
+        } else {
+            QMessageBox::warning(this, tr("Error"),
+                tr("Failed to load: ") + path);
+        }
+    } else {
+        QMessageBox::warning(this, tr("Error"),
+            tr("File not found: ") + path);
+        addRecentFile(path); // removes it from the list
+    }
+}
+
 void MainWindow::refreshPropertyPanel(const QString &name)
 {
     UiElementData data = m_scene->elementDataByName(name);
@@ -678,3 +824,13 @@ void MainWindow::onAbout()
                           "A Warcraft III custom UI designer.\n"
                           "Design UI with images and export INI configuration."));
 }
+
+// ── Alignment slots ──
+void MainWindow::onAlignLeft()      { pushUndoState(); m_scene->alignLeft(); }
+void MainWindow::onAlignRight()     { pushUndoState(); m_scene->alignRight(); }
+void MainWindow::onAlignTop()       { pushUndoState(); m_scene->alignTop(); }
+void MainWindow::onAlignBottom()    { pushUndoState(); m_scene->alignBottom(); }
+void MainWindow::onAlignCenterH()   { pushUndoState(); m_scene->alignCenterH(); }
+void MainWindow::onAlignCenterV()   { pushUndoState(); m_scene->alignCenterV(); }
+void MainWindow::onDistributeH()    { pushUndoState(); m_scene->distributeH(); }
+void MainWindow::onDistributeV()    { pushUndoState(); m_scene->distributeV(); }

@@ -26,8 +26,6 @@ private:
                       const QMap<QString, UiElementData> &dataMap,
                       QSet<QString> &written,
                       bool war3Mode) const;
-    static double toWar3X(double px, double parentPx = 0.0);
-    static double toWar3Y(double py, double parentPy = 0.0);
     static QString makeTextureRef(const QString &texture);
 };
 
