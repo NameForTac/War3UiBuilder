@@ -1,0 +1,25 @@
+@echo off
+chcp 65001 >nul
+cd /d "%~dp0"
+
+set QT_DIR=D:\Qt\6.10.2\mingw_64
+
+echo ^===^= [1/4] qmake ^===^=
+if not exist Makefile (
+    "%QT_DIR%\bin\qmake6.exe" War3UiBuilder.pro
+)
+
+echo ^===^= [2/4] build ^===^=
+mingw32-make -f Makefile.Release || exit /b 1
+
+echo ^===^= [3/4] deploy ^===^=
+if exist deploy rmdir /s /q deploy
+mkdir deploy
+copy bin\War3UiBuilder.exe deploy\
+
+echo ^===^= [4/4] windeployqt ^===^=
+"%QT_DIR%\bin\windeployqt.exe" deploy\War3UiBuilder.exe || exit /b 1
+
+echo ============ OK ============
+dir deploy
+pause

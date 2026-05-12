@@ -1,0 +1,32 @@
+# Build outputs
+bin/
+release/
+debug/
+deploy/
+tmp/
+
+# Qt generated
+*.pro.user
+.qmake.stash
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+Makefile
+Makefile.Debug
+Makefile.Release
+object_script.*
+
+# IDE
+.vs/
+.vscode/
+*.sln
+*.vcxproj*
+*.user
+*.suo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Qt Creator
+*.autosave

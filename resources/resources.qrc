@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>war3uibuilder_zh_CN.qm</file>
+    </qresource>
+</RCC>
