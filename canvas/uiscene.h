@@ -92,6 +92,7 @@ private:
     QList<UiElement *> selectedUiElements() const;
     UiElement *findByName(const QString &name) const;
     void moveDescendants(const QString &parentName, double dx, double dy);
+    void propagateStateToChildren(const QString &parentName);
     void onSelectionChanged();
     QString generateElementName() const;
     void connectElementSignals(UiElement *element);

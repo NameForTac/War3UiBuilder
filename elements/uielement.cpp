@@ -193,6 +193,9 @@ void UiElement::updateData(const UiElementData &data)
 
 QVariant UiElement::itemChange(GraphicsItemChange change, const QVariant &value)
 {
+    if (change == ItemPositionChange && m_data.locked) {
+        return pos(); // reject position change when locked
+    }
     if (change == ItemPositionHasChanged) {
         QPointF newPos = pos();
         double dx = newPos.x() - m_data.x;

@@ -22,6 +22,13 @@ QString FdfGenerator::escapeString(const QString &s)
 
 QString FdfGenerator::makeTextureRef(const QString &texture)
 {
+    // If the path is absolute (contains a drive letter or starts with /),
+    // extract just the filename — War3 FDF expects relative paths
+    QFileInfo fi(texture);
+    if (fi.isAbsolute()) {
+        return fi.fileName();
+    }
+
     QString ref = texture;
     if (ref.contains("textures/") || ref.contains("textures\\")) {
         int idx = ref.indexOf("textures");
@@ -91,6 +98,15 @@ static QString fdfTypeFor(const QString &type)
     return "SIMPLEFRAME";
 }
 
+// Check if an identifier is a known FDF frame type keyword
+static bool isFrameType(const QString &s)
+{
+    return s == "SIMPLEFRAME" || s == "BACKDROP" || s == "FRAME"
+        || s == "TEXT" || s == "BUTTON" || s == "EDITBOX"
+        || s == "SLIDER" || s == "GLUEBUTTON" || s == "SPRITE"
+        || s == "POPUPMENU" || s == "LISTBOX" || s == "SCROLLBAR";
+}
+
 void FdfGenerator::writeElement(QString &output, const UiElementData &element,
                                  const QMap<QString, UiElementData> &dataMap,
                                  QSet<QString> &written,
@@ -110,20 +126,33 @@ void FdfGenerator::writeElement(QString &output, const UiElementData &element,
         relY -= parent.y;
     }
 
-    // Frame block header
-    output += QString("%1Frame \"%2\" {\n").arg(ind, escapeString(element.name));
-    output += QString("%1    Type \"%2\",\n").arg(ind, fdfTypeFor(element.type));
+    // Frame block header — use type as keyword (e.g. BACKDROP "Name")
+    output += QString("%1%2 \"%3\" {\n").arg(ind, fdfTypeFor(element.type), escapeString(element.name));
 
     if (war3Mode) {
         output += QString("%1    Width %2,\n").arg(ind).arg(element.width / 1920.0 * 0.8, 0, 'f', 4);
         output += QString("%1    Height %2,\n").arg(ind).arg(element.height / 1080.0 * 0.6, 0, 'f', 4);
-        output += QString("%1    X %2,\n").arg(ind).arg(relX / 1920.0 * 0.8, 0, 'f', 4);
-        output += QString("%1    Y %2,\n").arg(ind).arg(-relY / 1080.0 * 0.6, 0, 'f', 4);
     } else {
         output += QString("%1    Width %2,\n").arg(ind).arg(element.width, 0, 'f', 1);
         output += QString("%1    Height %2,\n").arg(ind).arg(element.height, 0, 'f', 1);
-        output += QString("%1    X %2,\n").arg(ind).arg(relX, 0, 'f', 1);
-        output += QString("%1    Y %2,\n").arg(ind).arg(relY, 0, 'f', 1);
+    }
+
+    // SetPoint replaces X/Y/Anchor
+    {
+        QString target;
+        if (!element.parent.isEmpty() && dataMap.contains(element.parent))
+            target = escapeString(element.parent);
+        else
+            target = "Parent";
+        if (war3Mode) {
+            double sX = relX / 1920.0 * 0.8;
+            double sY = -relY / 1080.0 * 0.6;
+            output += QString("%1    SetPoint \"TOPLEFT\", \"%2\", \"TOPLEFT\", %3, %4,\n")
+                .arg(ind).arg(target).arg(sX, 0, 'f', 4).arg(sY, 0, 'f', 4);
+        } else {
+            output += QString("%1    SetPoint \"TOPLEFT\", \"%2\", \"TOPLEFT\", %3, %4,\n")
+                .arg(ind).arg(target).arg(relX, 0, 'f', 1).arg(relY, 0, 'f', 1);
+        }
     }
 
     // Texture
@@ -148,9 +177,6 @@ void FdfGenerator::writeElement(QString &output, const UiElementData &element,
         if (!element.textColor.isEmpty())
             output += QString("%1    TextColor \"%2\",\n").arg(ind, element.textColor);
     }
-
-    // Anchor (default TOPLEFT)
-    output += QString("%1    Anchor \"TOPLEFT\",\n").arg(ind);
 
     // Extended properties
     for (auto it = element.properties.begin(); it != element.properties.end(); ++it) {
@@ -322,13 +348,16 @@ static void applyProperty(UiElementData &element, const QString &key,
 // Parse a single Frame block from the FDF — returns a populated UiElementData
 // Nested Frame children are appended directly to @p result with parent set.
 UiElementData FdfGenerator::parseFrameBlock(FdfParser &parser,
-                                              QList<UiElementData> &result)
+                                              QList<UiElementData> &result,
+                                              const QString &frameType)
 {
     // Next token should be a string (frame name)
     FdfToken nameToken = parser.nextToken();
     UiElementData element;
     if (nameToken.type == FdfGenerator::FdfToken::String)
         element.name = nameToken.value;
+    if (!frameType.isEmpty())
+        element.type = frameType;
     element.width = 100.0;
     element.height = 100.0;
 
@@ -345,11 +374,13 @@ UiElementData FdfGenerator::parseFrameBlock(FdfParser &parser,
         if (keyToken.type == FdfGenerator::FdfToken::Eof)
             break;
 
-        // Check for nested "Frame"
+        // Check for nested frame (either "Frame" keyword or type keyword)
         if (keyToken.type == FdfGenerator::FdfToken::Identifier &&
-            keyToken.value == "Frame") {
+            (keyToken.value == "Frame" || isFrameType(keyToken.value))) {
             // Recursively parse child frame
-            UiElementData child = parseFrameBlock(parser, result);
+            QString kw = keyToken.value;
+            UiElementData child = parseFrameBlock(parser, result,
+                isFrameType(kw) ? kw : QString());
             child.parent = element.name;
             result.append(child);
             continue;
@@ -404,10 +435,15 @@ QList<UiElementData> FdfGenerator::importFdf(const QString &filePath, QString *e
     FdfParser parser(source);
     FdfToken token = parser.nextToken();
 
-    // Scan for "Frame" keywords at the top level
+    // Scan for frame declarations at the top level
     while (token.type != FdfToken::Eof) {
-        if (token.type == FdfToken::Identifier && token.value == "Frame") {
-            UiElementData element = parseFrameBlock(parser, result);
+        if (token.type == FdfToken::Identifier &&
+            (token.value == "Frame" || isFrameType(token.value))) {
+            QString kw = token.value;
+            // For type-keyword declarations (e.g. BACKDROP "Name"), pass type;
+            // for "Frame" keyword, type comes from inside the block
+            UiElementData element = parseFrameBlock(parser, result,
+                isFrameType(kw) ? kw : QString());
             if (!element.name.isEmpty()) {
                 result.append(element);
             }

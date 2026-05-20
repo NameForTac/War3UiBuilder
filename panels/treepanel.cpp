@@ -39,8 +39,8 @@ TreePanel::TreePanel(QWidget *parent)
     m_tree->header()->setSectionResizeMode(COL_NAME, QHeaderView::Stretch);
     m_tree->header()->setSectionResizeMode(COL_VISIBLE, QHeaderView::Fixed);
     m_tree->header()->setSectionResizeMode(COL_LOCK, QHeaderView::Fixed);
-    m_tree->setColumnWidth(COL_VISIBLE, 24);
-    m_tree->setColumnWidth(COL_LOCK, 24);
+    m_tree->setColumnWidth(COL_VISIBLE, 30);
+    m_tree->setColumnWidth(COL_LOCK, 30);
 
     layout->addWidget(m_tree);
 
@@ -62,8 +62,8 @@ TreePanel::TreePanel(QWidget *parent)
 
 void TreePanel::setItemStatus(QTreeWidgetItem *item, bool visible, bool locked)
 {
-    item->setText(COL_VISIBLE, visible ? QStringLiteral("○") : QString());
-    item->setText(COL_LOCK, locked ? QStringLiteral("◆") : QString());
+    item->setText(COL_VISIBLE, visible ? QStringLiteral("\U0001F441") : QString());  // 👁 eye
+    item->setText(COL_LOCK, locked ? QStringLiteral("\U0001F512") : QString());       // 🔒 lock
     item->setData(COL_VISIBLE, Qt::UserRole, visible);
     item->setData(COL_LOCK, Qt::UserRole, locked);
     QFont f = item->font(COL_NAME);

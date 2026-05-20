@@ -238,6 +238,8 @@ void UiScene::updateElementProperty(const QString &name, const UiElementData &da
                     }
                 }
             }
+            // Propagate visible/locked state to all descendants
+            propagateStateToChildren(name);
             emit elementDataChanged();
             return;
         }
@@ -633,6 +635,24 @@ void UiScene::moveDescendants(const QString &parentName, double dx, double dy)
         if (el->elementData().parent == parentName) {
             el->setPos(el->pos() + QPointF(dx, dy));
             moveDescendants(el->elementData().name, dx, dy);
+        }
+    }
+}
+
+void UiScene::propagateStateToChildren(const QString &parentName)
+{
+    auto parent = findByName(parentName);
+    if (!parent) return;
+    bool pv = parent->elementData().visible;
+    bool pl = parent->elementData().locked;
+
+    for (auto *el : m_elements) {
+        if (el->elementData().parent == parentName) {
+            auto cd = el->elementData();
+            cd.visible = pv;
+            cd.locked = pl;
+            el->updateData(cd);
+            propagateStateToChildren(cd.name);
         }
     }
 }

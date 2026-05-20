@@ -55,7 +55,8 @@ private:
 
     static QString escapeString(const QString &s);
     static QString makeTextureRef(const QString &texture);
-    static UiElementData parseFrameBlock(FdfParser &parser, QList<UiElementData> &result);
+    static UiElementData parseFrameBlock(FdfParser &parser, QList<UiElementData> &result,
+    const QString &frameType = QString());
 };
 
 #endif // FDFGENERATOR_H
