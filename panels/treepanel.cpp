@@ -61,33 +61,30 @@ TreePanel::TreePanel(QWidget *parent)
     });
 }
 
-// ── Tree item icon helpers ──
-
-static QPixmap makePixmap(const QColor &fill, int size = 20, bool rounded = false)
+static QIcon makeIcon(const QColor &fill, bool rounded = false)
 {
-    QPixmap pix(size, size);
+    QPixmap pix(20, 20);
     pix.fill(Qt::transparent);
     QPainter p(&pix);
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
     p.setBrush(fill);
     if (rounded)
-        p.drawRoundedRect(2, 2, size - 4, size - 4, 4, 4);
+        p.drawRoundedRect(2, 2, 16, 16, 4, 4);
     else
-        p.drawEllipse(2, 2, size - 4, size - 4);
+        p.drawEllipse(2, 2, 16, 16);
     p.end();
-    return pix;
+    return QIcon(pix);
 }
-
-static QIcon g_visibleIcon   = QIcon(makePixmap(QColor(0, 200, 80)));    // green circle
-static QIcon g_hiddenIcon    = QIcon(makePixmap(QColor(80, 80, 90)));    // dim circle
-static QIcon g_lockedIcon    = QIcon(makePixmap(QColor(255, 180, 60), 20, true)); // orange square
-static QIcon g_unlockedIcon  = QIcon(makePixmap(QColor(80, 80, 90), 20, true));   // dim square
 
 void TreePanel::setItemStatus(QTreeWidgetItem *item, bool visible, bool locked)
 {
-    item->setIcon(COL_VISIBLE, visible ? g_visibleIcon : g_hiddenIcon);
-    item->setIcon(COL_LOCK, locked ? g_lockedIcon : g_unlockedIcon);
+    static QIcon visIcon = makeIcon(QColor(0, 200, 80));
+    static QIcon hidIcon = makeIcon(QColor(80, 80, 90));
+    static QIcon lockIcon = makeIcon(QColor(255, 180, 60), true);
+    static QIcon unlockIcon = makeIcon(QColor(80, 80, 90), true);
+    item->setIcon(COL_VISIBLE, visible ? visIcon : hidIcon);
+    item->setIcon(COL_LOCK, locked ? lockIcon : unlockIcon);
     item->setData(COL_VISIBLE, Qt::UserRole, visible);
     item->setData(COL_LOCK, Qt::UserRole, locked);
     QFont f = item->font(COL_NAME);
