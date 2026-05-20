@@ -8,6 +8,7 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QTreeWidgetItemIterator>
+#include <QPainter>
 
 static constexpr int COL_NAME    = 0;
 static constexpr int COL_VISIBLE = 1;
@@ -39,8 +40,8 @@ TreePanel::TreePanel(QWidget *parent)
     m_tree->header()->setSectionResizeMode(COL_NAME, QHeaderView::Stretch);
     m_tree->header()->setSectionResizeMode(COL_VISIBLE, QHeaderView::Fixed);
     m_tree->header()->setSectionResizeMode(COL_LOCK, QHeaderView::Fixed);
-    m_tree->setColumnWidth(COL_VISIBLE, 30);
-    m_tree->setColumnWidth(COL_LOCK, 30);
+    m_tree->setColumnWidth(COL_VISIBLE, 24);
+    m_tree->setColumnWidth(COL_LOCK, 24);
 
     layout->addWidget(m_tree);
 
@@ -60,10 +61,33 @@ TreePanel::TreePanel(QWidget *parent)
     });
 }
 
+// ── Tree item icon helpers ──
+
+static QPixmap makePixmap(const QColor &fill, int size = 20, bool rounded = false)
+{
+    QPixmap pix(size, size);
+    pix.fill(Qt::transparent);
+    QPainter p(&pix);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(fill);
+    if (rounded)
+        p.drawRoundedRect(2, 2, size - 4, size - 4, 4, 4);
+    else
+        p.drawEllipse(2, 2, size - 4, size - 4);
+    p.end();
+    return pix;
+}
+
+static QIcon g_visibleIcon   = QIcon(makePixmap(QColor(0, 200, 80)));    // green circle
+static QIcon g_hiddenIcon    = QIcon(makePixmap(QColor(80, 80, 90)));    // dim circle
+static QIcon g_lockedIcon    = QIcon(makePixmap(QColor(255, 180, 60), 20, true)); // orange square
+static QIcon g_unlockedIcon  = QIcon(makePixmap(QColor(80, 80, 90), 20, true));   // dim square
+
 void TreePanel::setItemStatus(QTreeWidgetItem *item, bool visible, bool locked)
 {
-    item->setText(COL_VISIBLE, visible ? QStringLiteral("\U0001F441") : QString());  // 👁 eye
-    item->setText(COL_LOCK, locked ? QStringLiteral("\U0001F512") : QString());       // 🔒 lock
+    item->setIcon(COL_VISIBLE, visible ? g_visibleIcon : g_hiddenIcon);
+    item->setIcon(COL_LOCK, locked ? g_lockedIcon : g_unlockedIcon);
     item->setData(COL_VISIBLE, Qt::UserRole, visible);
     item->setData(COL_LOCK, Qt::UserRole, locked);
     QFont f = item->font(COL_NAME);

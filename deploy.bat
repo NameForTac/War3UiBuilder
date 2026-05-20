@@ -12,14 +12,16 @@ if not exist Makefile (
 echo ^===^= [2/4] build ^===^=
 mingw32-make -f Makefile.Release || exit /b 1
 
-echo ^===^= [3/4] deploy ^===^=
+echo ^===^= [3/4] windeployqt (bin) ^===^=
+"%QT_DIR%\bin\windeployqt.exe" bin\War3UiBuilder.exe || exit /b 1
+
+echo ^===^= [4/4] copy to deploy ^===^=
 if exist deploy rmdir /s /q deploy
 mkdir deploy
-copy bin\War3UiBuilder.exe deploy\
-
-echo ^===^= [4/4] windeployqt ^===^=
-"%QT_DIR%\bin\windeployqt.exe" deploy\War3UiBuilder.exe || exit /b 1
+xcopy bin\* deploy\ /E /I /Y >nul
 
 echo ============ OK ============
+echo bin\ — self-contained (Qt DLLs deployed)
+echo deploy\ — distribution copy
 dir deploy
 pause
