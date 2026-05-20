@@ -242,13 +242,25 @@ void UiElement::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     }
     QGraphicsObject::mouseReleaseEvent(event);
 
-    // Snap to grid after drag (before pushing undo state)
+    // Snap to grid and guides after drag
     auto *uiScene = qobject_cast<UiScene *>(scene());
-    if (uiScene && uiScene->snapGridSize() > 1) {
-        double sx = uiScene->snapToGrid(pos().x());
-        double sy = uiScene->snapToGrid(pos().y());
-        if (sx != pos().x() || sy != pos().y()) {
-            setPos(sx, sy);
+    if (uiScene) {
+        double nx = pos().x();
+        double ny = pos().y();
+
+        // Grid snap
+        if (uiScene->snapGridSize() > 1) {
+            nx = uiScene->snapToGrid(nx);
+            ny = uiScene->snapToGrid(ny);
+        }
+
+        // Guide snap
+        QPointF guideSnap = uiScene->snapToGuides(nx, ny, m_data.width, m_data.height);
+        nx = guideSnap.x();
+        ny = guideSnap.y();
+
+        if (nx != pos().x() || ny != pos().y()) {
+            setPos(nx, ny);
         }
     }
 

@@ -15,7 +15,7 @@ public:
     explicit UiScene(QObject *parent = nullptr);
     ~UiScene() = default;
 
-    void addElementFromTexture(const QString &texturePath);
+    void addElementFromTexture(const QString &texturePath, QPointF pos = {});
     void addElementFromData(const UiElementData &data);
     void deleteSelected();
     void clearAll();
@@ -28,11 +28,13 @@ public:
     bool setElementParent(const QString &childName, const QString &newParent);
     bool wouldCreateCycle(const QString &childName, const QString &potentialParent) const;
     void loadFromData(const QList<UiElementData> &elements);
+    void loadGroups(const QStringList &groups) { m_groups = groups; }
     QString uniqueName(const QString &base) const;
 
     void setSnapGridSize(int size) { m_snapGridSize = size; }
     int snapGridSize() const { return m_snapGridSize; }
     double snapToGrid(double val) const;
+    QPointF snapToGuides(double x, double y, double w, double h) const;
 
     // Context menu operations
     void deleteElement(const QString &name);
@@ -51,6 +53,22 @@ public:
     void alignCenterV();
     void distributeH();
     void distributeV();
+
+    // Guide management
+    void addGuide(double pos, bool horizontal);
+    void removeGuide(double pos, bool horizontal);
+    void clearGuides();
+    void setTempGuide(double pos, bool horizontal);
+    void clearTempGuide();
+
+    // Group management
+    QStringList groups() const;
+    void createGroup(const QString &name);
+    void deleteGroup(const QString &name);
+    void renameGroup(const QString &oldName, const QString &newName);
+    void addToGroup(const QString &elementName, const QString &groupName);
+    void removeFromGroup(const QString &elementName);
+    bool groupExists(const QString &name) const;
 
 signals:
     void contextActionTriggered();
@@ -80,6 +98,15 @@ private:
     bool m_updatingChildPosition = false;
     int m_snapGridSize = 1;
 
+    struct Guide {
+        double pos;
+        bool horizontal;
+    };
+    QList<Guide> m_guides;
+    Guide m_tempGuide{0, false};
+    bool m_hasTempGuide = false;
+
+    QStringList m_groups;
     QList<UiElement *> m_elements;
 };
 

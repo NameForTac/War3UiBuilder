@@ -15,12 +15,16 @@ IniGenerator::IniGenerator(QObject *parent)
 bool IniGenerator::generate(const QList<UiElementData> &elements,
                              const QString &projectDir,
                              const QString &outputPath,
-                             bool war3Mode)
+                             bool war3Mode,
+                             QString *errorMsg)
 {
     if (elements.isEmpty()) {
         QFile file(outputPath);
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            if (errorMsg)
+                *errorMsg = QString("Cannot write to file: %1").arg(outputPath);
             return false;
+        }
         file.write("[UI]\n");
         file.close();
         return true;
@@ -52,6 +56,8 @@ bool IniGenerator::generate(const QList<UiElementData> &elements,
 
     QFile file(outputPath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (errorMsg)
+            *errorMsg = QString("Cannot write to file: %1").arg(outputPath);
         qWarning() << "Failed to write INI:" << outputPath;
         return false;
     }

@@ -31,9 +31,35 @@ UiScene::UiScene(QObject *parent)
             this, &UiScene::onSelectionChanged);
 }
 
-void UiScene::drawForeground(QPainter *painter, const QRectF &)
+void UiScene::drawForeground(QPainter *painter, const QRectF &rect)
 {
     if (views().isEmpty()) return;
+
+    // Draw guides in scene coordinates
+    QPen guidePen(QColor(255, 80, 80, 200), 1, Qt::DashLine);
+    QPen tempGuidePen(QColor(255, 80, 80, 120), 1, Qt::DotLine);
+    painter->setPen(guidePen);
+
+    for (const auto &g : m_guides) {
+        if (g.horizontal) {
+            if (g.pos >= rect.top() && g.pos <= rect.bottom())
+                painter->drawLine(QPointF(rect.left(), g.pos), QPointF(rect.right(), g.pos));
+        } else {
+            if (g.pos >= rect.left() && g.pos <= rect.right())
+                painter->drawLine(QPointF(g.pos, rect.top()), QPointF(g.pos, rect.bottom()));
+        }
+    }
+
+    if (m_hasTempGuide) {
+        painter->setPen(tempGuidePen);
+        if (m_tempGuide.horizontal) {
+            if (m_tempGuide.pos >= rect.top() && m_tempGuide.pos <= rect.bottom())
+                painter->drawLine(QPointF(rect.left(), m_tempGuide.pos), QPointF(rect.right(), m_tempGuide.pos));
+        } else {
+            if (m_tempGuide.pos >= rect.left() && m_tempGuide.pos <= rect.right())
+                painter->drawLine(QPointF(m_tempGuide.pos, rect.top()), QPointF(m_tempGuide.pos, rect.bottom()));
+        }
+    }
 
     // Switch to viewport pixel coordinates so text stays fixed on screen
     painter->save();
@@ -74,14 +100,14 @@ void UiScene::drawForeground(QPainter *painter, const QRectF &)
     painter->restore();
 }
 
-void UiScene::addElementFromTexture(const QString &texturePath)
+void UiScene::addElementFromTexture(const QString &texturePath, QPointF pos)
 {
     UiElementData data;
     data.name = uniqueName(QFileInfo(texturePath).completeBaseName());
     data.type = "BACKDROP";
     data.texture = texturePath;
-    data.x = 0;
-    data.y = 0;
+    data.x = pos.isNull() ? 0 : pos.x() - 100;
+    data.y = pos.isNull() ? 0 : pos.y() - 50;
     data.width = 200;
     data.height = 100;
     data.parent = "";
@@ -142,6 +168,7 @@ void UiScene::clearAll()
         delete el;
     }
     m_elements.clear();
+    m_groups.clear();
     emit elementDataChanged();
     emit elementCountChanged(0);
 }
@@ -539,7 +566,7 @@ void UiScene::dropEvent(QGraphicsSceneDragDropEvent *event)
             debugLog(QString("[dropEvent] url=%1 path=%2 ext=%3").arg(url.toString(), path, ext));
 
             if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "bmp" || ext == "tga" || ext == "dds") {
-                addElementFromTexture(path);
+                addElementFromTexture(path, event->scenePos());
             } else {
                 debugLog(QString("[dropEvent] unsupported extension: %1").arg(ext));
             }
@@ -637,4 +664,168 @@ QString UiScene::uniqueName(const QString &base) const
     } while (std::any_of(m_elements.begin(), m_elements.end(),
                          [&](UiElement *el) { return el->elementData().name == name; }));
     return name;
+}
+
+static constexpr double GUIDE_SNAP_THRESHOLD = 6.0;
+
+QPointF UiScene::snapToGuides(double x, double y, double w, double h) const
+{
+    double sx = x;
+    double sy = y;
+
+    for (const auto &g : m_guides) {
+        if (g.horizontal) {
+            // Snap top edge to guide
+            if (qAbs(y - g.pos) < GUIDE_SNAP_THRESHOLD)
+                sy = g.pos;
+            // Snap bottom edge to guide
+            else if (qAbs(y + h - g.pos) < GUIDE_SNAP_THRESHOLD)
+                sy = g.pos - h;
+        } else {
+            // Snap left edge to guide
+            if (qAbs(x - g.pos) < GUIDE_SNAP_THRESHOLD)
+                sx = g.pos;
+            // Snap right edge to guide
+            else if (qAbs(x + w - g.pos) < GUIDE_SNAP_THRESHOLD)
+                sx = g.pos - w;
+        }
+    }
+
+    return QPointF(sx, sy);
+}
+
+// ── Guide management ──
+
+void UiScene::addGuide(double pos, bool horizontal)
+{
+    // Don't add duplicate guides at the same position
+    for (const auto &g : m_guides) {
+        if (g.horizontal == horizontal && qAbs(g.pos - pos) < 2.0)
+            return;
+    }
+    m_guides.append({pos, horizontal});
+    update();
+}
+
+void UiScene::removeGuide(double pos, bool horizontal)
+{
+    for (int i = 0; i < m_guides.size(); ++i) {
+        if (m_guides[i].horizontal == horizontal && qAbs(m_guides[i].pos - pos) < 2.0) {
+            m_guides.removeAt(i);
+            break;
+        }
+    }
+    update();
+}
+
+void UiScene::clearGuides()
+{
+    m_guides.clear();
+    update();
+}
+
+void UiScene::setTempGuide(double pos, bool horizontal)
+{
+    m_tempGuide = {pos, horizontal};
+    m_hasTempGuide = true;
+    update();
+}
+
+void UiScene::clearTempGuide()
+{
+    m_hasTempGuide = false;
+    update();
+}
+
+// ── Group management ──
+
+QStringList UiScene::groups() const
+{
+    // Collect groups from storage + elements
+    QSet<QString> allGroups(m_groups.begin(), m_groups.end());
+    for (const auto *el : m_elements) {
+        if (!el->elementData().group.isEmpty())
+            allGroups.insert(el->elementData().group);
+    }
+    QStringList sorted = allGroups.values();
+    sorted.sort();
+    return sorted;
+}
+
+void UiScene::createGroup(const QString &name)
+{
+    if (name.isEmpty() || m_groups.contains(name)) return;
+    m_groups.append(name);
+    emit elementDataChanged();
+}
+
+void UiScene::deleteGroup(const QString &name)
+{
+    m_groups.removeAll(name);
+    // Remove group assignment from all elements
+    for (auto *el : m_elements) {
+        if (el->elementData().group == name) {
+            auto data = el->elementData();
+            data.group.clear();
+            el->updateData(data);
+        }
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::renameGroup(const QString &oldName, const QString &newName)
+{
+    if (oldName == newName || newName.isEmpty()) return;
+    if (m_groups.contains(oldName)) {
+        m_groups.removeAll(oldName);
+        m_groups.append(newName);
+    }
+    // Update elements in this group
+    for (auto *el : m_elements) {
+        if (el->elementData().group == oldName) {
+            auto data = el->elementData();
+            data.group = newName;
+            el->updateData(data);
+        }
+    }
+    emit elementDataChanged();
+}
+
+void UiScene::addToGroup(const QString &elementName, const QString &groupName)
+{
+    if (elementName.isEmpty() || groupName.isEmpty()) return;
+    for (auto *el : m_elements) {
+        if (el->elementData().name == elementName) {
+            auto data = el->elementData();
+            data.group = groupName;
+            el->updateData(data);
+            break;
+        }
+    }
+    if (!m_groups.contains(groupName))
+        m_groups.append(groupName);
+    emit elementDataChanged();
+}
+
+void UiScene::removeFromGroup(const QString &elementName)
+{
+    for (auto *el : m_elements) {
+        if (el->elementData().name == elementName) {
+            auto data = el->elementData();
+            data.group.clear();
+            el->updateData(data);
+            break;
+        }
+    }
+    emit elementDataChanged();
+}
+
+bool UiScene::groupExists(const QString &name) const
+{
+    if (m_groups.contains(name)) return true;
+    for (const auto *el : m_elements) {
+        if (el->elementData().group == name)
+            return true;
+    }
+    return false;
 }

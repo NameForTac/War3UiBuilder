@@ -1,5 +1,6 @@
 #include "projectmanager.h"
 #include "export/inigenerator.h"
+#include "export/fdfgenerator.h"
 #include "elements/uielementdata.h"
 
 #include <QDir>
@@ -13,6 +14,7 @@
 ProjectManager::ProjectManager(QObject *parent)
     : QObject(parent)
     , m_iniGenerator(new IniGenerator(this))
+    , m_fdfGenerator(new FdfGenerator(this))
 {
 }
 
@@ -23,7 +25,7 @@ void ProjectManager::newProject()
     m_projectFile.clear();
 }
 
-bool ProjectManager::saveProject(const QString &path)
+bool ProjectManager::saveProject(const QString &path, QString *errorMsg)
 {
     QJsonObject root;
     QJsonArray elementsArray;
@@ -39,6 +41,7 @@ bool ProjectManager::saveProject(const QString &path)
         obj["width"] = el.width;
         obj["height"] = el.height;
         obj["parent"] = el.parent;
+        obj["group"] = el.group;
 
         // Type-specific properties
         obj["normalTexture"] = el.normalTexture;
@@ -60,10 +63,18 @@ bool ProjectManager::saveProject(const QString &path)
     root["elements"] = elementsArray;
     root["version"] = "1.0";
 
+    // Serialize groups
+    QJsonArray groupsArray;
+    for (const auto &g : m_groups)
+        groupsArray.append(g);
+    root["groups"] = groupsArray;
+
     QJsonDocument doc(root);
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (errorMsg)
+            *errorMsg = QString("Cannot write to file: %1").arg(path);
         qWarning() << "Failed to save project:" << path;
         return false;
     }
@@ -77,27 +88,76 @@ bool ProjectManager::saveProject(const QString &path)
     return true;
 }
 
-bool ProjectManager::loadProject(const QString &path)
+bool ProjectManager::loadProject(const QString &path, QString *errorMsg)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (errorMsg)
+            *errorMsg = QString("Cannot open file: %1\n%2").arg(path, file.errorString());
         qWarning() << "Failed to load project:" << path;
         return false;
     }
 
-    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    QByteArray data = file.readAll();
     file.close();
 
-    if (!doc.isObject()) return false;
+    if (data.isEmpty()) {
+        if (errorMsg)
+            *errorMsg = tr("File is empty: %1").arg(path);
+        return false;
+    }
+
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError) {
+        if (errorMsg)
+            *errorMsg = tr("Invalid JSON at offset %1: %2\n\nFile: %3")
+                .arg(parseError.offset)
+                .arg(parseError.errorString())
+                .arg(path);
+        return false;
+    }
+
+    if (!doc.isObject()) {
+        if (errorMsg)
+            *errorMsg = tr("Project file root is not a JSON object: %1").arg(path);
+        return false;
+    }
 
     QJsonObject root = doc.object();
-    m_elements.clear();
+
+    if (!root.contains("elements")) {
+        if (errorMsg)
+            *errorMsg = tr("Project file is missing 'elements' array: %1").arg(path);
+        return false;
+    }
 
     QJsonArray elementsArray = root["elements"].toArray();
+    if (elementsArray.isEmpty()) {
+        if (errorMsg)
+            *errorMsg = tr("Project file contains no elements (empty array).");
+        // Not a fatal error — empty project is valid
+    }
+
+    m_elements.clear();
+    int loadErrors = 0;
+
     for (const auto &val : elementsArray) {
+        if (!val.isObject()) {
+            ++loadErrors;
+            continue;
+        }
         QJsonObject obj = val.toObject();
 
         UiElementData el;
+
+        // Validate required fields
+        if (!obj.contains("name") || !obj["name"].isString()) {
+            ++loadErrors;
+            continue;
+        }
+
         el.name = obj["name"].toString();
         el.type = obj["type"].toString("SIMPLEFRAME");
         el.texture = obj["texture"].toString();
@@ -107,6 +167,7 @@ bool ProjectManager::loadProject(const QString &path)
         el.width = obj["width"].toDouble(100);
         el.height = obj["height"].toDouble(100);
         el.parent = obj["parent"].toString();
+        el.group = obj["group"].toString();
 
         // Type-specific properties
         el.normalTexture = obj["normalTexture"].toString();
@@ -124,24 +185,48 @@ bool ProjectManager::loadProject(const QString &path)
         m_elements.append(el);
     }
 
+    // Load groups
+    m_groups.clear();
+    QJsonArray groupsArray = root["groups"].toArray();
+    for (const auto &g : groupsArray)
+        m_groups.append(g.toString());
+
+    if (loadErrors > 0 && errorMsg) {
+        *errorMsg = tr("Loaded with %1 corrupted element(s) skipped.").arg(loadErrors);
+    }
+
     m_projectFile = path;
     m_projectDir = QFileInfo(path).absolutePath();
 
     return true;
 }
 
-bool ProjectManager::exportIni(const QString &path, bool war3Mode)
+bool ProjectManager::exportIni(const QString &path, bool war3Mode, QString *errorMsg)
 {
-    return m_iniGenerator->generate(m_elements, m_projectDir, path, war3Mode);
+    return m_iniGenerator->generate(m_elements, m_projectDir, path, war3Mode, errorMsg);
 }
 
-QStringList ProjectManager::importImages(const QStringList &sourcePaths, const QString &targetDir)
+bool ProjectManager::exportFdf(const QString &path, bool war3Mode, QString *errorMsg)
 {
-    QStringList imported;
+    return m_fdfGenerator->exportFdf(m_elements, path, war3Mode, errorMsg);
+}
+
+QList<UiElementData> ProjectManager::importFdf(const QString &path, QString *errorMsg)
+{
+    return m_fdfGenerator->importFdf(path, errorMsg);
+}
+
+ProjectManager::ImportResult ProjectManager::importImages(const QStringList &sourcePaths, const QString &targetDir)
+{
+    ImportResult result;
 
     QDir dir(targetDir);
     if (!dir.exists()) {
-        dir.mkpath(".");
+        if (!dir.mkpath(".")) {
+            for (const auto &p : sourcePaths)
+                result.failed.append(p);
+            return result;
+        }
     }
 
     // Create a textures subdirectory
@@ -153,18 +238,24 @@ QStringList ProjectManager::importImages(const QStringList &sourcePaths, const Q
 
     for (const QString &sourcePath : sourcePaths) {
         QFileInfo fi(sourcePath);
+        if (!fi.exists()) {
+            result.failed.append(sourcePath);
+            continue;
+        }
+
         QString targetPath = texturesDir + "/" + fi.fileName();
 
         if (QFile::exists(targetPath)) {
-            // Remove existing file before copy
             QFile::remove(targetPath);
         }
 
         if (QFile::copy(sourcePath, targetPath)) {
-            imported.append(targetPath);
+            result.imported.append(targetPath);
+        } else {
+            result.failed.append(sourcePath);
         }
     }
 
     m_projectDir = targetDir;
-    return imported;
+    return result;
 }

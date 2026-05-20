@@ -16,9 +16,9 @@ public:
     explicit TreePanel(QWidget *parent = nullptr);
     ~TreePanel() = default;
 
-    void rebuildTree(const QList<UiElementData> &elements);
+    void rebuildTree(const QList<UiElementData> &elements, const QStringList &groups = {});
     void selectElement(const QString &name);
-    void refreshTree(const QList<UiElementData> &elements);
+    void refreshTree(const QList<UiElementData> &elements, const QStringList &groups = {});
     void clearPanel();
 
 signals:
@@ -28,6 +28,12 @@ signals:
     void parentChanged(const QString &elementName, const QString &newParent);
     void renameRequested(const QString &oldName, const QString &newName);
     void deleteRequested(const QString &name);
+
+    // Group operations
+    void groupCreated(const QString &name);
+    void groupDeleted(const QString &name);
+    void groupRenamed(const QString &oldName, const QString &newName);
+    void groupAssignmentChanged(const QString &elementName, const QString &groupName);
 
 private slots:
     void onItemClicked(QTreeWidgetItem *item, int column);

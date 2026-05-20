@@ -12,6 +12,7 @@ class UiView;
 class UiScene;
 class TreePanel;
 class PropertyPanel;
+class TexturePanel;
 class ProjectManager;
 class UndoManager;
 
@@ -28,6 +29,8 @@ private slots:
     void onOpenProject();
     void onSaveProject();
     void onExportIni();
+    void onExportFdf();
+    void onImportFdf();
     void onImportImage();
     void onDeleteSelected();
     void onCopy();
@@ -48,6 +51,8 @@ private slots:
     void onDistributeH();
     void onDistributeV();
 
+    void onSearchReplace();
+
 private:
     void setupMenuBar();
     void setupToolBar();
@@ -56,11 +61,13 @@ private:
     void connectSignals();
 
     void refreshPropertyPanel(const QString &name);
+    void refreshTexturePanel();
 
     UiScene *m_scene;
     UiView *m_view;
     TreePanel *m_treePanel;
     PropertyPanel *m_propertyPanel;
+    TexturePanel *m_texturePanel;
     ProjectManager *m_projectManager;
     UndoManager *m_undoManager;
     QString m_selectedElementName;

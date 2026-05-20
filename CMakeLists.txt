@@ -17,9 +17,12 @@ add_executable(War3UiBuilder
     elements/uielementdata.cpp
     panels/treepanel.cpp
     panels/propertypanel.cpp
+    panels/texturepanel.cpp
+    panels/searchreplacedialog.cpp
     managers/projectmanager.cpp
     managers/undomanager.cpp
     export/inigenerator.cpp
+    export/fdfgenerator.cpp
     3rdparty/stb_image.cpp
     resources/resources.qrc
 )
@@ -35,9 +38,16 @@ if(BUILD_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
     add_executable(War3UiBuilder_test
         tests/test_coord.cpp
+        elements/uielementdata.cpp
+        export/inigenerator.cpp
+        export/fdfgenerator.cpp
+        managers/undomanager.cpp
     )
     target_include_directories(War3UiBuilder_test PRIVATE
+        ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/elements
+        ${CMAKE_SOURCE_DIR}/export
+        ${CMAKE_SOURCE_DIR}/managers
     )
     target_link_libraries(War3UiBuilder_test PRIVATE
         Qt6::Core Qt6::Test

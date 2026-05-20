@@ -24,6 +24,7 @@ public:
     void showBatch(const QStringList &names, const QList<UiElementData> &elements);
     void setReferenceOffset(double ox, double oy);
     void updateParentList(const QStringList &parentNames);
+    void updateGroupList(const QStringList &groups);
     void clearPanel();
 
 signals:
@@ -70,6 +71,7 @@ private:
     QDoubleSpinBox *m_heightSpin;
     QLineEdit *m_textureEdit;
     QComboBox *m_parentCombo;
+    QComboBox *m_groupCombo;
 
     // War3 coordinate display
     QTextEdit *m_war3Coords;

@@ -4,6 +4,8 @@
 #include "elements/uielementdata.h"
 #include "panels/treepanel.h"
 #include "panels/propertypanel.h"
+#include "panels/texturepanel.h"
+#include "panels/searchreplacedialog.h"
 #include "managers/projectmanager.h"
 #include "managers/undomanager.h"
 
@@ -287,6 +289,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_view = new UiView(m_scene, this);
     m_treePanel = new TreePanel(this);
     m_propertyPanel = new PropertyPanel(this);
+    m_texturePanel = new TexturePanel(this);
     m_projectManager = new ProjectManager(this);
     m_undoManager = new UndoManager(this);
 
@@ -326,6 +329,11 @@ void MainWindow::setupMenuBar()
 
     QAction *exportAct = fileMenu->addAction(tr("&Export INI..."), this, &MainWindow::onExportIni);
     exportAct->setShortcut(QKeySequence("Ctrl+E"));
+
+    QAction *exportFdfAct = fileMenu->addAction(tr("Export F&DF..."), this, &MainWindow::onExportFdf);
+    exportFdfAct->setShortcut(QKeySequence("Ctrl+Shift+E"));
+
+    fileMenu->addAction(tr("&Import FDF..."), this, &MainWindow::onImportFdf);
 
     fileMenu->addSeparator();
 
@@ -369,6 +377,10 @@ void MainWindow::setupMenuBar()
     deleteAct->setShortcut(QKeySequence::Delete);
 
     editMenu->addSeparator();
+
+    editMenu->addAction(tr("Search &Replace..."), QKeySequence("Ctrl+H"), this, &MainWindow::onSearchReplace);
+
+    editMenu->addSeparator();
     QMenu *alignMenu = editMenu->addMenu(tr("&Align"));
     alignMenu->addAction(tr("Left"), QKeySequence("Ctrl+Shift+L"), this, &MainWindow::onAlignLeft);
     alignMenu->addAction(tr("Right"), QKeySequence("Ctrl+Shift+R"), this, &MainWindow::onAlignRight);
@@ -387,6 +399,14 @@ void MainWindow::setupMenuBar()
     viewMenu->addAction(tr("&Fit All"), QKeySequence("Ctrl+0"), m_view, &UiView::fitAll);
     viewMenu->addSeparator();
     viewMenu->addAction(tr("Grid Snap &Size..."), this, &MainWindow::onGridSnap);
+    viewMenu->addSeparator();
+
+    QAction *showRulersAct = viewMenu->addAction(tr("Show &Rulers"));
+    showRulersAct->setCheckable(true);
+    showRulersAct->setChecked(m_view->showRulers());
+    connect(showRulersAct, &QAction::toggled, m_view, &UiView::setShowRulers);
+
+    viewMenu->addAction(tr("&Clear Guides"), m_scene, &UiScene::clearGuides);
 
     // Help menu
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
@@ -426,6 +446,11 @@ void MainWindow::setupToolBar()
         tr("Export INI"), this, &MainWindow::onExportIni);
     exportAct->setToolTip(tr("Export to Warcraft III INI format (Ctrl+E)"));
 
+    auto *exportFdfAct = toolbar->addAction(
+        style()->standardIcon(QStyle::SP_FileDialogDetailedView),
+        tr("Export FDF"), this, &MainWindow::onExportFdf);
+    exportFdfAct->setToolTip(tr("Export to Warcraft III FDF format (Ctrl+Shift+E)"));
+
     toolbar->addSeparator();
 
     auto *delAct = toolbar->addAction(
@@ -452,15 +477,39 @@ void MainWindow::setupDockPanels()
     propDock->setWidget(m_propertyPanel);
     propDock->setMinimumWidth(280);
     addDockWidget(Qt::RightDockWidgetArea, propDock);
+
+    // Bottom-right dock - Texture browser
+    QDockWidget *texDock = new QDockWidget(tr("Texture Browser"), this);
+    texDock->setWidget(m_texturePanel);
+    texDock->setMinimumWidth(200);
+    addDockWidget(Qt::RightDockWidgetArea, texDock);
 }
 
 void MainWindow::connectSignals()
 {
-    // Texture loading failure notification
+    // Texture loading failure notification — offer to relocate
     connect(m_scene, &UiScene::textureLoadFailed, this, [this](const QString &path, const QString &reason) {
         statusBar()->showMessage(reason, 10000);
-        QMessageBox::warning(this, tr("图片加载失败"),
-            tr("无法加载图片：\n%1\n\n%2").arg(path, reason));
+        auto result = QMessageBox::warning(this, tr("Texture Load Failed"),
+            tr("Failed to load texture:\n%1\n\n%2\n\nDo you want to locate the file manually?")
+                .arg(path, reason),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (result == QMessageBox::Yes) {
+            QString newPath = QFileDialog::getOpenFileName(this, tr("Locate Texture"),
+                QFileInfo(path).path(),
+                tr("Images (*.png *.jpg *.jpeg *.bmp *.tga *.dds);;All Files (*)"));
+            if (!newPath.isEmpty() && !m_selectedElementName.isEmpty()) {
+                pushUndoState();
+                UiElementData data = m_scene->elementDataByName(m_selectedElementName);
+                if (data.isValid()) {
+                    data.texture = newPath;
+                    data.hasTexture = true;
+                    m_scene->updateElementProperty(m_selectedElementName, data);
+                    refreshPropertyPanel(m_selectedElementName);
+                    statusBar()->showMessage(tr("Texture relocated: %1").arg(newPath), 5000);
+                }
+            }
+        }
     });
 
     // Scene selection -> tree + property panel sync
@@ -473,6 +522,7 @@ void MainWindow::connectSignals()
             QStringList names;
             for (const auto &d : selected)
                 names.append(d.name);
+            m_propertyPanel->updateGroupList(m_scene->groups());
             m_propertyPanel->showBatch(names, selected);
         } else {
             refreshPropertyPanel(name);
@@ -483,7 +533,7 @@ void MainWindow::connectSignals()
         m_propertyPanel->clearPanel();
     });
     connect(m_scene, &UiScene::elementDataChanged, this, [this]() {
-        m_treePanel->refreshTree(m_scene->allElementData());
+        m_treePanel->refreshTree(m_scene->allElementData(), m_scene->groups());
         if (!m_selectedElementName.isEmpty()) {
             refreshPropertyPanel(m_selectedElementName);
         }
@@ -550,6 +600,31 @@ void MainWindow::connectSignals()
         }
     });
 
+    // Tree panel group operations -> scene
+    connect(m_treePanel, &TreePanel::groupCreated, m_scene, &UiScene::createGroup);
+    connect(m_treePanel, &TreePanel::groupDeleted, m_scene, &UiScene::deleteGroup);
+    connect(m_treePanel, &TreePanel::groupRenamed, m_scene, &UiScene::renameGroup);
+    connect(m_treePanel, &TreePanel::groupAssignmentChanged, this, [this](const QString &elName, const QString &groupName) {
+        pushUndoState();
+        if (groupName.isEmpty())
+            m_scene->removeFromGroup(elName);
+        else
+            m_scene->addToGroup(elName, groupName);
+    });
+
+    // Texture selection -> apply to selected element
+    connect(m_texturePanel, &TexturePanel::textureSelected, this, [this](const QString &texturePath) {
+        if (m_selectedElementName.isEmpty()) return;
+        pushUndoState();
+        UiElementData data = m_scene->elementDataByName(m_selectedElementName);
+        if (data.isValid()) {
+            data.texture = texturePath;
+            data.hasTexture = true;
+            m_scene->updateElementProperty(m_selectedElementName, data);
+            refreshPropertyPanel(m_selectedElementName);
+        }
+    });
+
     // Property changes -> scene update
     connect(m_propertyPanel, &PropertyPanel::propertyChanged, this,
             [this](const QString &name, const UiElementData &data) {
@@ -579,7 +654,9 @@ void MainWindow::onNewProject()
     m_scene->clearAll();
     m_treePanel->clearPanel();
     m_propertyPanel->clearPanel();
+    m_texturePanel->clearPanel();
     m_undoManager->clear();
+    m_projectManager->setGroups({});
     statusBar()->showMessage(tr("New project created"));
 }
 
@@ -589,13 +666,20 @@ void MainWindow::onOpenProject()
                                                   QString(), tr("War3UI Project (*.wui)"));
     if (path.isEmpty()) return;
 
-    if (m_projectManager->loadProject(path)) {
+    QString errorMsg;
+    if (m_projectManager->loadProject(path, &errorMsg)) {
         m_scene->loadFromData(m_projectManager->elements());
-        m_treePanel->rebuildTree(m_projectManager->elements());
+        m_scene->loadGroups(m_projectManager->groups());
+        m_treePanel->rebuildTree(m_projectManager->elements(), m_projectManager->groups());
+        refreshTexturePanel();
         statusBar()->showMessage(tr("Project loaded: ") + path);
         addRecentFile(path);
+        if (!errorMsg.isEmpty()) {
+            statusBar()->showMessage(errorMsg, 8000);
+        }
     } else {
-        QMessageBox::warning(this, tr("Error"), tr("Failed to load project."));
+        QMessageBox::warning(this, tr("Load Error"),
+            tr("Failed to load project file.\n\n%1").arg(errorMsg));
     }
 }
 
@@ -606,11 +690,14 @@ void MainWindow::onSaveProject()
     if (path.isEmpty()) return;
 
     m_projectManager->setElements(m_scene->allElementData());
-    if (m_projectManager->saveProject(path)) {
+    m_projectManager->setGroups(m_scene->groups());
+    QString errorMsg;
+    if (m_projectManager->saveProject(path, &errorMsg)) {
         statusBar()->showMessage(tr("Project saved: ") + path);
         addRecentFile(path);
     } else {
-        QMessageBox::warning(this, tr("Error"), tr("Failed to save project."));
+        QMessageBox::warning(this, tr("Save Error"),
+            tr("Failed to save project.\n\n%1").arg(errorMsg));
     }
 }
 
@@ -630,12 +717,62 @@ void MainWindow::onExportIni()
     if (path.isEmpty()) return;
 
     m_projectManager->setElements(m_scene->allElementData());
-    if (m_projectManager->exportIni(path, war3Mode)) {
+    QString errorMsg;
+    if (m_projectManager->exportIni(path, war3Mode, &errorMsg)) {
         statusBar()->showMessage(tr("INI exported: ") + path);
         QMessageBox::information(this, tr("Success"), tr("INI file exported successfully."));
     } else {
-        QMessageBox::warning(this, tr("Error"), tr("Failed to export INI."));
+        QMessageBox::warning(this, tr("Export Error"),
+            tr("Failed to export INI.\n\n%1").arg(errorMsg));
     }
+}
+
+void MainWindow::onExportFdf()
+{
+    QStringList modes;
+    modes << tr("1920×1080 像素坐标 (相对父级)")
+          << tr("War3 归一化坐标 (相对父级)");
+    bool ok;
+    QString mode = QInputDialog::getItem(this, tr("选择导出坐标模式"),
+                                           tr("坐标模式:"), modes, 0, false, &ok);
+    if (!ok) return;
+    bool war3Mode = (mode == modes[1]);
+
+    QString path = QFileDialog::getSaveFileName(this, tr("Export FDF"),
+                                                  QString(), tr("FDF File (*.fdf)"));
+    if (path.isEmpty()) return;
+
+    m_projectManager->setElements(m_scene->allElementData());
+    QString errorMsg;
+    if (m_projectManager->exportFdf(path, war3Mode, &errorMsg)) {
+        statusBar()->showMessage(tr("FDF exported: ") + path);
+        QMessageBox::information(this, tr("Success"), tr("FDF file exported successfully."));
+    } else {
+        QMessageBox::warning(this, tr("Export Error"),
+            tr("Failed to export FDF.\n\n%1").arg(errorMsg));
+    }
+}
+
+void MainWindow::onImportFdf()
+{
+    QString path = QFileDialog::getOpenFileName(this, tr("Import FDF"),
+                                                  QString(), tr("FDF File (*.fdf)"));
+    if (path.isEmpty()) return;
+
+    QString errorMsg;
+    auto elements = m_projectManager->importFdf(path, &errorMsg);
+    if (elements.isEmpty()) {
+        QString msg = errorMsg.isEmpty() ? tr("No elements found in FDF file.") : errorMsg;
+        QMessageBox::warning(this, tr("Import Error"), msg);
+        return;
+    }
+
+    pushUndoState();
+    for (const auto &el : elements) {
+        m_scene->addElementFromData(el);
+    }
+    m_treePanel->rebuildTree(m_scene->allElementData(), m_scene->groups());
+    statusBar()->showMessage(tr("Imported %1 elements from FDF").arg(elements.size()));
 }
 
 void MainWindow::onImportImage()
@@ -649,11 +786,26 @@ void MainWindow::onImportImage()
     QString projectDir = QFileDialog::getExistingDirectory(this, tr("Select project directory for images"));
     if (projectDir.isEmpty()) return;
 
-    QStringList importedTextures = m_projectManager->importImages(paths, projectDir);
-    for (const QString &texture : importedTextures) {
+    auto result = m_projectManager->importImages(paths, projectDir);
+    for (const QString &texture : result.imported) {
         m_scene->addElementFromTexture(texture);
     }
-    statusBar()->showMessage(tr("Imported %1 images").arg(importedTextures.size()));
+    refreshTexturePanel();
+
+    if (!result.failed.isEmpty()) {
+        QStringList shortNames;
+        for (const auto &f : result.failed)
+            shortNames << QFileInfo(f).fileName();
+        statusBar()->showMessage(
+            tr("Imported %1 images, %2 failed").arg(result.imported.size()).arg(result.failed.size()), 8000);
+        QMessageBox::warning(this, tr("Import Results"),
+            tr("Successfully imported: %1\n\nFailed to import: %2\n\n%3")
+                .arg(result.imported.size())
+                .arg(result.failed.size())
+                .arg(shortNames.join("\n")));
+    } else {
+        statusBar()->showMessage(tr("Imported %1 images").arg(result.imported.size()));
+    }
 }
 
 void MainWindow::onDeleteSelected()
@@ -777,18 +929,24 @@ void MainWindow::openRecentFile()
     if (!act) return;
     QString path = act->data().toString();
     if (QFileInfo::exists(path)) {
-        if (m_projectManager->loadProject(path)) {
+        QString errorMsg;
+        if (m_projectManager->loadProject(path, &errorMsg)) {
             m_scene->loadFromData(m_projectManager->elements());
-            m_treePanel->rebuildTree(m_projectManager->elements());
+            m_scene->loadGroups(m_projectManager->groups());
+            m_treePanel->rebuildTree(m_projectManager->elements(), m_projectManager->groups());
+            refreshTexturePanel();
             statusBar()->showMessage(tr("Project loaded: ") + path);
             addRecentFile(path);
+            if (!errorMsg.isEmpty()) {
+                statusBar()->showMessage(errorMsg, 8000);
+            }
         } else {
-            QMessageBox::warning(this, tr("Error"),
-                tr("Failed to load: ") + path);
+            QMessageBox::warning(this, tr("Load Error"),
+                tr("Failed to load project.\n\n%1").arg(errorMsg));
         }
     } else {
-        QMessageBox::warning(this, tr("Error"),
-            tr("File not found: ") + path);
+        QMessageBox::warning(this, tr("File Not Found"),
+            tr("The file no longer exists:\n%1\n\nIt will be removed from recent files.").arg(path));
         addRecentFile(path); // removes it from the list
     }
 }
@@ -813,8 +971,18 @@ void MainWindow::refreshPropertyPanel(const QString &name)
             if (d.name != name) allNames.append(d.name);
         }
         m_propertyPanel->updateParentList(allNames);
+        m_propertyPanel->updateGroupList(m_scene->groups());
         m_propertyPanel->showElement(name, data);
     }
+}
+
+void MainWindow::refreshTexturePanel()
+{
+    QString dir = m_projectManager->projectDir();
+    if (!dir.isEmpty())
+        m_texturePanel->loadTextures(dir + "/textures");
+    else
+        m_texturePanel->clearPanel();
 }
 
 void MainWindow::onAbout()
@@ -834,3 +1002,64 @@ void MainWindow::onAlignCenterH()   { pushUndoState(); m_scene->alignCenterH(); 
 void MainWindow::onAlignCenterV()   { pushUndoState(); m_scene->alignCenterV(); }
 void MainWindow::onDistributeH()    { pushUndoState(); m_scene->distributeH(); }
 void MainWindow::onDistributeV()    { pushUndoState(); m_scene->distributeV(); }
+
+void MainWindow::onSearchReplace()
+{
+    auto allData = m_scene->allElementData();
+    auto selectedData = m_scene->selectedElementData();
+    if (allData.isEmpty()) {
+        QMessageBox::information(this, tr("Search & Replace"),
+            tr("No elements in the project to search."));
+        return;
+    }
+
+    SearchReplaceDialog dialog(allData, selectedData, this);
+    if (dialog.exec() == QDialog::Accepted || !dialog.appliedReplacements().isEmpty()) {
+        const auto &replacements = dialog.appliedReplacements();
+        if (replacements.isEmpty()) return;
+
+        pushUndoState();
+
+        // Group replacements by element name for efficient updates
+        QMap<QString, UiElementData> modifiedElements;
+        for (const auto &r : replacements) {
+            if (!modifiedElements.contains(r.elementName))
+                modifiedElements[r.elementName] = m_scene->elementDataByName(r.elementName);
+
+            auto &data = modifiedElements[r.elementName];
+            if (!data.isValid()) continue;
+
+            if (r.propertyKey.isEmpty()) {
+                // Rename element
+                m_scene->renameElement(r.elementName, r.newValue);
+            } else if (r.propertyKey == "Texture") {
+                data.texture = r.newValue;
+                data.hasTexture = true;
+            } else if (r.propertyKey == "NormalTexture") {
+                data.normalTexture = r.newValue;
+            } else if (r.propertyKey == "HighlightTexture") {
+                data.highlightTexture = r.newValue;
+            } else if (r.propertyKey == "ModelPath") {
+                data.modelPath = r.newValue;
+            } else if (r.propertyKey == "TextContent") {
+                data.textContent = r.newValue;
+            } else if (r.propertyKey == "FontSize") {
+                data.fontSize = r.newValue.toDouble();
+            } else if (r.propertyKey == "TextColor") {
+                data.textColor = r.newValue;
+            } else {
+                // Extended property
+                data.properties[r.propertyKey] = r.newValue;
+            }
+        }
+
+        // Write back all modified elements
+        for (auto it = modifiedElements.begin(); it != modifiedElements.end(); ++it) {
+            if (it.value().isValid())
+                m_scene->updateElementProperty(it.key(), it.value());
+        }
+
+        m_treePanel->refreshTree(m_scene->allElementData(), m_scene->groups());
+        statusBar()->showMessage(tr("Applied %1 replacement(s)").arg(replacements.size()), 5000);
+    }
+}

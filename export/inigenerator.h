@@ -18,7 +18,8 @@ public:
     bool generate(const QList<UiElementData> &elements,
                   const QString &projectDir,
                   const QString &outputPath,
-                  bool war3Mode = false);
+                  bool war3Mode = false,
+                  QString *errorMsg = nullptr);
 
 private:
     QString propertyLine(const QString &prefix, const QString &key, const QString &value) const;

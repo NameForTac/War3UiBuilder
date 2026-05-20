@@ -23,6 +23,9 @@ struct UiElementData
 
     QString parent;
 
+    // Organizational group (for tree panel, not export)
+    QString group;
+
     // Type-specific properties
     QString normalTexture;      // BUTTON: normal state texture
     QString highlightTexture;   // BUTTON: highlighted state texture

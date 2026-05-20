@@ -19,9 +19,12 @@ SOURCES += \
     elements/uielementdata.cpp \
     panels/treepanel.cpp \
     panels/propertypanel.cpp \
+    panels/texturepanel.cpp \
+    panels/searchreplacedialog.cpp \
     managers/projectmanager.cpp \
     managers/undomanager.cpp \
     export/inigenerator.cpp \
+    export/fdfgenerator.cpp \
     3rdparty/stb_image.cpp
 
 HEADERS += \
@@ -32,9 +35,12 @@ HEADERS += \
     elements/uielementdata.h \
     panels/treepanel.h \
     panels/propertypanel.h \
+    panels/texturepanel.h \
+    panels/searchreplacedialog.h \
     managers/projectmanager.h \
     managers/undomanager.h \
-    export/inigenerator.h
+    export/inigenerator.h \
+    export/fdfgenerator.h
 
 INCLUDEPATH += 3rdparty
 

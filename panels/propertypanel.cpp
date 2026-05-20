@@ -6,6 +6,7 @@
 #include <QGroupBox>
 #include <QPushButton>
 #include <QHeaderView>
+#include <QScrollArea>
 
 PropertyPanel::PropertyPanel(QWidget *parent)
     : QWidget(parent)
@@ -15,7 +16,17 @@ PropertyPanel::PropertyPanel(QWidget *parent)
 
 void PropertyPanel::setupUi()
 {
-    auto *mainLayout = new QVBoxLayout(this);
+    auto *outerLayout = new QVBoxLayout(this);
+    outerLayout->setContentsMargins(0, 0, 0, 0);
+
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setStyleSheet("QScrollArea { background: transparent; }");
+
+    auto *contentWidget = new QWidget(scrollArea);
+    auto *mainLayout = new QVBoxLayout(contentWidget);
     mainLayout->setContentsMargins(4, 4, 4, 4);
 
     // Batch mode indicator (hidden by default)
@@ -72,6 +83,11 @@ void PropertyPanel::setupUi()
     m_parentCombo->setEditable(true);
     m_parentCombo->setPlaceholderText(tr("(None - Root element)"));
     formLayout->addRow(tr("Parent:"), m_parentCombo);
+
+    m_groupCombo = new QComboBox(this);
+    m_groupCombo->setEditable(true);
+    m_groupCombo->setPlaceholderText(tr("(No group)"));
+    formLayout->addRow(tr("Group:"), m_groupCombo);
 
     mainLayout->addWidget(basicGroup);
 
@@ -157,6 +173,9 @@ void PropertyPanel::setupUi()
     mainLayout->addWidget(extraGroup);
     mainLayout->addStretch();
 
+    scrollArea->setWidget(contentWidget);
+    outerLayout->addWidget(scrollArea);
+
     // Wire up live edits
     connect(m_nameEdit, &QLineEdit::editingFinished, this, &PropertyPanel::onNameChanged);
     connect(m_typeCombo, &QComboBox::textActivated, this, [this](const QString &t) {
@@ -197,6 +216,11 @@ void PropertyPanel::setupUi()
     });
     connect(m_parentCombo, &QComboBox::textActivated, this, [this](const QString &p) {
         m_currentData.parent = p;
+        emitPropertyChanged();
+    });
+
+    connect(m_groupCombo, &QComboBox::textActivated, this, [this](const QString &g) {
+        m_currentData.group = g;
         emitPropertyChanged();
     });
 
@@ -261,6 +285,7 @@ void PropertyPanel::showElement(const QString &name, const UiElementData &data)
     m_heightSpin->setValue(toDisplayH(m_currentData.height));
     m_textureEdit->setText(m_currentData.texture);
     m_parentCombo->setCurrentText(m_currentData.parent);
+    m_groupCombo->setCurrentText(m_currentData.group);
 
     // Type-specific fields
     m_normalTextureEdit->setText(m_currentData.normalTexture);
@@ -309,6 +334,7 @@ void PropertyPanel::showBatch(const QStringList &names, const QList<UiElementDat
     m_heightSpin->setValue(toDisplayH(m_currentData.height));
     m_textureEdit->setText(m_currentData.texture);
     m_parentCombo->setCurrentText(QString());
+    m_groupCombo->setCurrentText(QString());
 
     // Type-specific fields
     m_normalTextureEdit->setText(m_currentData.normalTexture);
@@ -342,6 +368,16 @@ void PropertyPanel::updateParentList(const QStringList &parentNames)
         m_parentCombo->setCurrentText(currentParent);
 }
 
+void PropertyPanel::updateGroupList(const QStringList &groups)
+{
+    QString currentGroup = m_groupCombo->currentText();
+    m_groupCombo->clear();
+    m_groupCombo->addItem("");
+    m_groupCombo->addItems(groups);
+    if (m_groupCombo->findText(currentGroup) >= 0)
+        m_groupCombo->setCurrentText(currentGroup);
+}
+
 void PropertyPanel::clearPanel()
 {
     m_currentElementName.clear();
@@ -362,6 +398,7 @@ void PropertyPanel::clearPanel()
     m_heightSpin->setValue(100);
     m_textureEdit->clear();
     m_parentCombo->clear();
+    m_groupCombo->clear();
     m_war3Coords->clear();
     // Type-specific
     m_normalTextureEdit->clear();
@@ -554,6 +591,7 @@ void PropertyPanel::blockAllSignals(bool block)
     m_heightSpin->blockSignals(block);
     m_textureEdit->blockSignals(block);
     m_parentCombo->blockSignals(block);
+    m_groupCombo->blockSignals(block);
     m_normalTextureEdit->blockSignals(block);
     m_highlightTextureEdit->blockSignals(block);
     m_modelPathEdit->blockSignals(block);
